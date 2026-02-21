@@ -184,6 +184,9 @@ while ch:
         else:
             print("Ошибка: введите 0 или 1.")
             continue
+        if not arr:
+            print("Ошибка: массив не может быть пустым.")
+            continue
         sorts_for_arr = [s for s in array_of_sorts if s not in (COUNTING, BUCKET) or min(arr) >= 0]
         while check:
             main_body(sorts_for_arr, arr)
