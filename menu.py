@@ -23,7 +23,7 @@ def exit():  # noqa: A001
 
 
 def start():
-    """Prompt: manual or generate. Returns 0, 1 or None on invalid."""
+    """manual or generate. Returns 0, 1 or None on invalid."""
     try:
         gen = int(
             input(
