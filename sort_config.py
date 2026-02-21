@@ -62,8 +62,7 @@ def run_sort(sorts_list, arr):
         print(
             f"Время нашей сортировки:     {d1} мс"
             f"\nВремя системной сортировки: {d2} мс"
-            f"\nИтоговый массив: {res}"
-        )
+            f"\nИтоговый массив: {res}")
         return True, None
     except ValueError as e:
         return False, str(e)

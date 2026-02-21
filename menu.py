@@ -18,7 +18,7 @@ def greetings():
     print("Привет Пользователь! \nЭто программа, для сравнения сортировок")
 
 
-def exit():  # noqa: A001
+def exit():
     print("Спасибо за использование!")
 
 
@@ -28,9 +28,7 @@ def start():
         gen = int(
             input(
                 "Вы хотите написать массив или сгенерировать? \n"
-                "0.Написать массив \n1.Сгенерировать \nВведите здесь >>> "
-            )
-        )
+                "0.Написать массив \n1.Сгенерировать \nВведите здесь >>> "))
         if gen in (0, 1):
             return gen
     except ValueError:
@@ -57,14 +55,7 @@ class Menu:
 
     def run(self):
         while self.state != State.EXIT:
-            try:
                 self._step()
-            except Exception:
-                errormessage("Произошла непредвиденная ошибка. Попробуйте ещё раз.")
-                if self.state == State.CHOOSE_SOURCE:
-                    self.state = State.CHOOSE_SOURCE
-                elif self.state in (State.PICK_SORT, State.CHOOSE_NEXT):
-                    self.state = State.CHOOSE_NEXT
         exit()
 
     def _step(self):
@@ -85,11 +76,7 @@ class Menu:
         elif self.state == State.ENTER_ARRAY:
             try:
                 self.arr = list(
-                    map(
-                        int,
-                        input("Введите ваш массив без скобок, через пробел >>> ").split(),
-                    )
-                )
+                    map(int,input("Введите ваш массив без скобок, через пробел >>> ").split(),))
             except ValueError:
                 errormessage("введите числа через пробел, без скобок.")
                 return
@@ -121,17 +108,10 @@ class Menu:
 
         elif self.state == State.CHOOSE_NEXT:
             print("Что делать дальше?")
-            try:
-                a = int(
-                    input(
-                        "0.Отсортировать этот же массив \n"
-                        "1.Ввести другой массив \n"
-                        "2.Выйти из программы \nВведите номер: "
-                    )
-                )
-            except ValueError:
-                errormessage("введите число 0, 1 или 2.")
-                return
+            a = int(input(
+                    "0.Отсортировать этот же массив \n"
+                    "1.Ввести другой массив \n"
+                    "2.Выйти из программы \nВведите номер: "))
             if a == 0:
                 self.state = State.PICK_SORT
             elif a == 1:
