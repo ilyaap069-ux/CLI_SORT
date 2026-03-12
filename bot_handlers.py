@@ -1,5 +1,7 @@
 from random import randint
 from typing import Dict, List, Set
+from datetime import datetime
+import uuid
 
 import telebot
 from telebot import types
@@ -19,6 +21,25 @@ LAST_ARRAY_BY_CHAT: Dict[int, List[int]] = {}
 
 # Последний отсортированный массив (результат) по chat_id
 LAST_RESULT_BY_CHAT: Dict[int, List[int]] = {}
+
+
+def logs(chat_id, operation_type, sort_name: str = "", time_of_sort: str = "", message: str = ""):
+    # Формат времени как в примере: 11.03.2026.4442
+    # Здесь 4442 — это, скорее всего, миллисекунды с точкой вместо запятой
+    now = datetime.utcnow()  # или .now() если хочешь локальное время
+    timestamp = now.strftime("%d.%m.%Y.") + f"{now.microsecond // 1000:04d}"
+    
+    chat_id_str = str(chat_id) if isinstance(chat_id, int) else chat_id
+    
+    log_line = (
+        f"{{timestampz:{timestamp};"
+        f"chatid:{chat_id_str},"
+        f'type:"{operation_type}",'
+        f' sort_name:"{sort_name}",'
+        f' time_of_sort:"{time_of_sort}",'
+        f' message:"{message}"}}'
+    )
+    print(log_line)
 
 
 def _format_array(arr: List[int], max_len: int = 50) -> str:
@@ -51,6 +72,11 @@ def _build_sort_keyboard(arr: List[int]) -> types.InlineKeyboardMarkup:
 def _register_text_handlers(bot: telebot.TeleBot) -> None:
     @bot.message_handler(commands=["start", "help"])
     def welcome(message: telebot.types.Message) -> None:
+        logs(
+            message.chat.id,
+            "start_help",
+            message=f"command={message.text}",
+        )
         kb = types.InlineKeyboardMarkup()
         kb.row(
             types.InlineKeyboardButton(
@@ -78,6 +104,7 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
 
     @bot.message_handler(commands=["faq"])
     def faq(message: telebot.types.Message) -> None:
+        logs(message.chat.id, "faq")
         text = (
             "❓ *FAQ по боту сортировок*\n\n"
             "• Я *делаю*: сравниваю разные алгоритмы сортировки на одном массиве и "
@@ -102,7 +129,9 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
 
     @bot.message_handler(commands=["gen"])
     def gen_command(message: telebot.types.Message) -> None:
+        logs(message.chat.id, "gen")
         """Войти в режим задания параметров генерации массива."""
+        print("")
         GENERATION_AWAITING_PARAMS.add(message.chat.id)
         bot.reply_to(
             message,
@@ -120,6 +149,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
         """
         parts = message.text.split()
         if len(parts) < 2:
+            logs(
+                message.chat.id,
+                "sort_buttons_error",
+                message="no numbers provided",
+            )
             bot.reply_to(
                 message,
                 "Использование: /sort_buttons <числа...>\n"
@@ -130,6 +164,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
         try:
             arr = [int(x) for x in parts[1:]]
         except ValueError:
+            logs(
+                message.chat.id,
+                "sort_buttons_error",
+                message="non‑integer values in array",
+            )
             bot.reply_to(
                 message,
                 "Ошибка: все элементы массива должны быть целыми числами.\n"
@@ -138,6 +177,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if not arr:
+            logs(
+                message.chat.id,
+                "sort_buttons_error",
+                message="empty array",
+            )
             bot.reply_to(
                 message,
                 "Массив не может быть пустым. Укажите хотя бы одно число.",
@@ -150,6 +194,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             "Выберите алгоритм сортировки для этого массива:",
             reply_markup=_build_sort_keyboard(arr),
         )
+        logs(
+            message.chat.id,
+            "sort_buttons",
+            message=f"len={len(arr)}",
+        )
 
     @bot.message_handler(func=lambda m: not m.text.startswith("/"))
     def array_message_handler(message: telebot.types.Message) -> None:
@@ -159,6 +208,7 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
         # Сначала обрабатываем режим "ждём параметры генерации"
         if chat_id in GENERATION_AWAITING_PARAMS:
             parts = message.text.split()
+            logs(chat_id, "gen_params")
             if len(parts) != 3:
                 bot.reply_to(
                     message,
@@ -170,6 +220,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             try:
                 minim, maxim, count = map(int, parts)
             except ValueError:
+                logs(
+                    chat_id,
+                    "gen_params_error",
+                    message="non‑integer generator params",
+                )
                 bot.reply_to(
                     message,
                     "Все три параметра должны быть целыми числами.\n"
@@ -179,6 +234,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
                 return
 
             if count <= 0:
+                logs(
+                    chat_id,
+                    "gen_params_error",
+                    message=f"non‑positive count={count}",
+                )
                 bot.reply_to(
                     message,
                     "Количество элементов должно быть > 0.",
@@ -186,6 +246,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
                 return
 
             if minim > maxim:
+                logs(
+                    chat_id,
+                    "gen_params_error",
+                    message=f"min>{'{'}max{'}'}: {minim}>{maxim}",
+                )
                 bot.reply_to(
                     message,
                     "Минимум не может быть больше максимума. Попробуйте ещё раз.\n"
@@ -197,6 +262,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             arr = [randint(minim, maxim) for _ in range(count)]
             GENERATION_AWAITING_PARAMS.discard(chat_id)
             LAST_ARRAY_BY_CHAT[chat_id] = arr
+            logs(
+                chat_id,
+                "gen_params_ok",
+                message=f"min={minim}, max={maxim}, count={count}",
+            )
 
             kb = _build_sort_keyboard(arr)
             bot.reply_to(
@@ -211,9 +281,15 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
 
         # Обычный режим — пользователь прислал готовый массив
         parts = message.text.split()
+        logs(chat_id, "array_message")
         try:
             arr = [int(x) for x in parts]
         except ValueError:
+            logs(
+                chat_id,
+                "array_message_error",
+                message="non‑integer values in array",
+            )
             bot.reply_to(
                 message,
                 "Я ожидаю массив целых чисел, разделённых пробелами.\n"
@@ -223,6 +299,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if not arr:
+            logs(
+                chat_id,
+                "array_message_error",
+                message="empty array",
+            )
             bot.reply_to(
                 message,
                 "Массив не может быть пустым. Укажите хотя бы одно число.",
@@ -245,6 +326,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
         """
         parts = message.text.split()
         if len(parts) < 3:
+            logs(
+                message.chat.id,
+                "sort_error",
+                message="not enough arguments",
+            )
             bot.reply_to(
                 message,
                 "Использование: /sort <алгоритм> <числа...>\n"
@@ -255,6 +341,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
 
         algo_key = parts[1].lower()
         if algo_key not in SORT_KEY_MAP:
+            logs(
+                message.chat.id,
+                "sort_error",
+                message=f"unknown algorithm={algo_key}",
+            )
             bot.reply_to(
                 message,
                 "Неизвестный алгоритм сортировки.\n"
@@ -265,6 +356,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
         try:
             arr = [int(x) for x in parts[2:]]
         except ValueError:
+            logs(
+                message.chat.id,
+                "sort_error",
+                message="non‑integer values in array",
+            )
             bot.reply_to(
                 message,
                 "Ошибка: все элементы массива должны быть целыми числами.\n"
@@ -273,6 +369,11 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if not arr:
+            logs(
+                message.chat.id,
+                "sort_error",
+                message="empty array",
+            )
             bot.reply_to(
                 message,
                 "Массив не может быть пустым. Укажите хотя бы одно число.",
@@ -283,19 +384,42 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
 
         # Ограничение для counting и bucket при отрицательных числах
         if min(arr) < 0 and sort_alg in (COUNTING, BUCKET):
+            logs(
+                message.chat.id,
+                "sort_error",
+                sort_name=algo_key,
+                message="negative numbers not allowed for counting/bucket",
+            )
             bot.reply_to(
                 message,
                 "Алгоритмы counting и bucket не работают с отрицательными числами.\n"
                 "Выберите другой алгоритм или используйте массив только из неотрицательных чисел.",
             )
             return
-
         try:
             d1, d2, res = sort_result(sort_alg, arr)
+            logs(
+                message.chat.id,
+                "sort",
+                sort_name=algo_key,
+                time_of_sort=d1,
+            )
         except ValueError as e:
+            logs(
+                message.chat.id,
+                "sort_exception",
+                sort_name=algo_key,
+                message=f"ValueError: {e}",
+            )
             bot.reply_to(message, f"Ошибка при сортировке: {e}")
             return
         except Exception:
+            logs(
+                message.chat.id,
+                "sort_exception",
+                sort_name=algo_key,
+                message="unexpected error during sort",
+            )
             bot.reply_to(
                 message,
                 "Произошла внутренняя ошибка при сортировке. "
@@ -335,6 +459,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if action == "manual":
+            logs(
+                call.message.chat.id,
+                "start_manual",
+                message="user chose manual array input",
+            )
             bot.send_message(
                 call.message.chat.id,
                 "Напишите массив целых чисел через пробел.\n"
@@ -345,6 +474,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if action == "gen":
+            logs(
+                call.message.chat.id,
+                "start_gen",
+                message="user chose generator params",
+            )
             GENERATION_AWAITING_PARAMS.add(call.message.chat.id)
             bot.send_message(
                 call.message.chat.id,
@@ -367,12 +501,22 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if algo_key not in SORT_KEY_MAP:
+            logs(
+                call.message.chat.id,
+                "sort_callback_error",
+                message=f"unknown algorithm={algo_key}",
+            )
             bot.answer_callback_query(call.id, "Неизвестный алгоритм.")
             return
 
         chat_id = call.message.chat.id
         arr = LAST_ARRAY_BY_CHAT.get(chat_id)
         if not arr:
+            logs(
+                chat_id,
+                "sort_callback_error",
+                message="array not found for chat",
+            )
             bot.answer_callback_query(call.id, "Массив не найден. Пришлите его ещё раз.")
             return
 
@@ -380,6 +524,12 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
 
         # Ограничение для counting и bucket при отрицательных числах
         if min(arr) < 0 and sort_alg in (COUNTING, BUCKET):
+            logs(
+                chat_id,
+                "sort_callback_error",
+                sort_name=algo_key,
+                message="negative numbers not allowed for counting/bucket",
+            )
             bot.answer_callback_query(
                 call.id,
                 "counting и bucket не работают с отрицательными числами.",
@@ -389,10 +539,28 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
 
         try:
             d1, d2, res = sort_result(sort_alg, arr)
+            logs(
+                chat_id,
+                "sort_callback",
+                sort_name=algo_key,
+                time_of_sort=d1,
+            )
         except ValueError as e:
+            logs(
+                chat_id,
+                "sort_callback_exception",
+                sort_name=algo_key,
+                message=f"ValueError: {e}",
+            )
             bot.answer_callback_query(call.id, f"Ошибка: {e}", show_alert=True)
             return
         except Exception:
+            logs(
+                chat_id,
+                "sort_callback_exception",
+                sort_name=algo_key,
+                message="unexpected error during sort",
+            )
             bot.answer_callback_query(
                 call.id,
                 "Внутренняя ошибка при сортировке.",
@@ -401,10 +569,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         LAST_RESULT_BY_CHAT[chat_id] = res
-
         formatted_arr = _format_array(res)
         reply_text = (
             f"*Алгоритм*: `{sort_alg.name}`\n"
+            f"*Time complexity*: {sort_alg.time_complexity}\n"
+            f"*Space complexity*: {sort_alg.space_complexity}\n"
             f"*Время алгоритма*: `{d1} мс`\n"
             f"*Время встроенной сортировки*: `{d2} мс`\n"
             f"*Отсортированный массив*:\n`{formatted_arr}`"
@@ -453,6 +622,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
         chat_id = call.message.chat.id
 
         if action == "again":
+            logs(
+                chat_id,
+                "next_again",
+                message="user wants another algorithm for same array",
+            )
             arr = LAST_ARRAY_BY_CHAT.get(chat_id)
             if not arr:
                 bot.answer_callback_query(call.id, "Массив не найден. Пришлите его ещё раз.")
@@ -467,6 +641,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if action == "new":
+            logs(
+                chat_id,
+                "next_new",
+                message="user wants to enter new array",
+            )
             bot.send_message(
                 chat_id,
                 "Пришлите новый массив чисел через пробел.\n"
@@ -477,6 +656,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         if action == "gen":
+            logs(
+                chat_id,
+                "next_gen",
+                message="user wants to generate new array",
+            )
             # Переходим в режим запроса параметров генерации
             GENERATION_AWAITING_PARAMS.add(chat_id)
             bot.send_message(
@@ -504,6 +688,11 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
             return
 
         chat_id = call.message.chat.id
+        logs(
+            chat_id,
+            "show_full",
+            message="user requested full sorted array",
+        )
         arr = LAST_RESULT_BY_CHAT.get(chat_id)
         if not arr:
             bot.answer_callback_query(call.id, "Массив не найден. Отсортируйте его ещё раз.")

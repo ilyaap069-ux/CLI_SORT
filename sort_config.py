@@ -24,9 +24,6 @@ def array_generator():
 def sort_result(sort_alg, arr):
     """Run sort, validate, return (d1, d2, res). Raises on invalid result."""
     new_arr = arr.copy()
-    print("Название:", sort_alg.name)
-    print("time complexity:", sort_alg.time_complexity)
-    print("space complexity:", sort_alg.space_complexity)
 
     start = time.perf_counter()
     res = sort_alg.sort_function(new_arr)
