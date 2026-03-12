@@ -1,4 +1,5 @@
 import os
+import time
 
 from dotenv import load_dotenv
 import telebot
@@ -22,4 +23,7 @@ register_handlers(bot)
 
 if __name__ == "__main__":
     print("запуск бота")
-    bot.infinity_polling()
+    try:
+        bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    except KeyboardInterrupt:
+        print("Остановка бота по Ctrl+C")

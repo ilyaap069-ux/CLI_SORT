@@ -16,7 +16,7 @@ class SortAlg:
 
 BUBBLE = SortAlg(
     name="bubble sort",
-    time_complexity="O(n**2)",
+    time_complexity="O(n²)",
     space_complexity="O(1)",
     is_stable=True,
     sort_function=sort_func.bubble_sort)
@@ -46,13 +46,13 @@ HEAP = SortAlg(
     sort_function=sort_func.heap_Sort)
 INSERTION = SortAlg(
     name="insertion sort",
-    time_complexity="O(n**2)",
+    time_complexity="O(n²)",
     space_complexity="O(1)",
     is_stable=True,
     sort_function=sort_func.insertion_sort)
 SHELL = SortAlg(
     name="shell sort",
-    time_complexity="O(n**2)",
+    time_complexity="O(n²)",
     space_complexity="O(1)",
     is_stable=False,
     sort_function=sort_func.shell_sort)

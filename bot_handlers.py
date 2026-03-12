@@ -1,6 +1,8 @@
+import os
 from random import randint
 from typing import Dict, List, Set
-from datetime import datetime
+from datetime import datetime, timedelta
+import json
 import uuid
 
 import telebot
@@ -13,6 +15,10 @@ from sorts import ARRAY_OF_SORTS, BUCKET, COUNTING
 # Короткие ключи для алгоритмов сортировки, например: /sort quick 3 1 2
 SORT_KEY_MAP = {alg.name.split()[0].lower(): alg for alg in ARRAY_OF_SORTS}
 
+# Путь к файлу логов рядом с исходниками, независимо от текущей рабочей директории
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_PATH = os.path.join(BASE_DIR, "logs.jsonl")
+
 # Чаты, для которых мы ждём параметры генерации (min max count)
 GENERATION_AWAITING_PARAMS: Set[int] = set()
 
@@ -24,22 +30,22 @@ LAST_RESULT_BY_CHAT: Dict[int, List[int]] = {}
 
 
 def logs(chat_id, operation_type, sort_name: str = "", time_of_sort: str = "", message: str = ""):
-    # Формат времени как в примере: 11.03.2026.4442
-    # Здесь 4442 — это, скорее всего, миллисекунды с точкой вместо запятой
-    now = datetime.utcnow()  # или .now() если хочешь локальное время
-    timestamp = now.strftime("%d.%m.%Y.") + f"{now.microsecond // 1000:04d}"
-    
-    chat_id_str = str(chat_id) if isinstance(chat_id, int) else chat_id
-    
-    log_line = (
-        f"{{timestampz:{timestamp};"
-        f"chatid:{chat_id_str},"
-        f'type:"{operation_type}",'
-        f' sort_name:"{sort_name}",'
-        f' time_of_sort:"{time_of_sort}",'
-        f' message:"{message}"}}'
-    )
-    print(log_line)
+    # Время в UTC+3
+    now = datetime.utcnow() + timedelta(hours=3)
+    # Формат: 11.03.2026.17:57
+    timestamp = now.strftime("%d.%m.%Y.%H:%M")
+
+    payload = {
+        "timestampz": timestamp,
+        # Для каждого события генерируем отдельный UUID,
+        # как в примере {timestampz:..., chatid:uuid, ...}
+        "chatid": str(uuid.uuid4()),
+        "type": operation_type,
+        "sort_name": sort_name,
+    }
+
+    with open(LOG_PATH, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
 
 def _format_array(arr: List[int], max_len: int = 50) -> str:
@@ -123,7 +129,8 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             "• При ошибке ввода я попрошу прислать данные ещё раз.\n"
             "• После сортировки я предложу, что делать дальше: отсортировать этот же массив "
             "другим алгоритмом, ввести новый или сгенерировать новый массив.\n\n"
-            "Более подробная документация доступна в файле FAQ.md проекта."
+            "Более подробная документация доступна в GitHub‑репозитории:\n"
+            "[FAQ.md](https://github.com/ilyaap069-ux/CLI_SORT/blob/master/FAQ.md)."
         )
         bot.reply_to(message, text, parse_mode="Markdown")
 
