@@ -4,16 +4,71 @@ from typing import Dict, List, Set
 from datetime import datetime, timedelta
 import json
 import uuid
+import inspect
 
 import telebot
 from telebot import types
+from telebot.apihelper import ApiTelegramException
 
 from sort_config import sort_result
-from sorts import ARRAY_OF_SORTS, BUCKET, COUNTING
+from sorts import ARRAY_OF_SORTS, BUCKET, COUNTING, RADIX
+import sort_func
 
 
 # Короткие ключи для алгоритмов сортировки, например: /sort quick 3 1 2
 SORT_KEY_MAP = {alg.name.split()[0].lower(): alg for alg in ARRAY_OF_SORTS}
+
+# Краткие текстовые описания алгоритмов для показа вместе с кодом
+ALGO_DESCRIPTIONS: Dict[str, str] = {
+    "bubble": (
+        "Пузырьковая сортировка многократно проходит по массиву и "
+        "попарно меняет местами соседние элементы, если они стоят "
+        "неправильно. После каждого прохода самый большой элемент "
+        "\"всплывает\" в конец массива."
+    ),
+    "radix": (
+        "Radix sort сортирует числа по разрядам: сначала по младшему "
+        "разряду, затем по следующему и так далее. На каждом шаге "
+        "используется стабильная сортировка по одной цифре."
+    ),
+    "bucket": (
+        "Bucket sort для целых неотрицательных чисел создаёт вспомогательный "
+        "массив булевых значений (битовую карту) и отмечает, какие числа "
+        "встречаются. Затем восстанавливает отсортированный список по этой карте."
+    ),
+    "counting": (
+        "Counting sort считает, сколько раз каждое значение встречается "
+        "в массиве, а затем по этим подсчётам восстанавливает отсортированный "
+        "массив. Хорошо работает, когда диапазон значений невелик."
+    ),
+    "heap": (
+        "Heap sort сначала строит из массива двоичную кучу (max‑heap), "
+        "где на вершине всегда максимальный элемент. Затем по одному "
+        "вынимает максимум в конец массива и восстанавливает свойство кучи."
+    ),
+    "insertion": (
+        "Сортировка вставками идёт по массиву слева направо и поддерживает "
+        "левую часть в отсортированном состоянии. Для каждого нового элемента "
+        "она находит среди уже отсортированных элементов позицию, куда его нужно "
+        "вставить, сдвигая более крупные значения вправо. Особенно эффективна, "
+        "когда массив почти отсортирован."
+    ),
+    "shell": (
+        "Сортировка Шелла обобщает сортировку вставками: сначала сортируются "
+        "элементы на больших расстояниях (шаг gap), затем шаг уменьшается до 1. "
+        "Это позволяет быстрее разнести элементы на нужные позиции."
+    ),
+    "quick": (
+        "Быстрая сортировка (quick sort) выбирает опорный элемент (pivot), "
+        "делит массив на элементы меньше и не меньше опорного, рекурсивно "
+        "сортирует две части и склеивает результат."
+    ),
+    "merge": (
+        "Сортировка слиянием рекурсивно делит массив пополам, сортирует "
+        "каждую половину, а затем аккуратно сливает два отсортированных "
+        "подмассива в один."
+    ),
+}
 
 # Путь к файлу логов рядом с исходниками, независимо от текущей рабочей директории
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -36,12 +91,14 @@ def logs(chat_id, operation_type, sort_name: str = "", time_of_sort: str = "", m
     timestamp = now.strftime("%d.%m.%Y.%H:%M")
 
     payload = {
-        "timestampz": timestamp,
         # Для каждого события генерируем отдельный UUID,
         # как в примере {timestampz:..., chatid:uuid, ...}
         "chatid": str(uuid.uuid4()),
+        "timestampz": timestamp,
         "type": operation_type,
         "sort_name": sort_name,
+        "time_of_sort": time_of_sort,
+        "message": message,
     }
 
     with open(LOG_PATH, "a", encoding="utf-8") as f:
@@ -60,8 +117,8 @@ def _build_sort_keyboard(arr: List[int]) -> types.InlineKeyboardMarkup:
     kb = types.InlineKeyboardMarkup()
     row: list[types.InlineKeyboardButton] = []
     for key, alg in SORT_KEY_MAP.items():
-        # Отключаем counting и bucket, если есть отрицательные числа
-        if min(arr) < 0 and alg in (COUNTING, BUCKET):
+        # Отключаем counting, bucket и radix, если есть отрицательные числа
+        if min(arr) < 0 and alg in (COUNTING, BUCKET, RADIX):
             continue
         # В callback_data кладём только ключ алгоритма, массив храним в памяти по chat_id
         callback_data = f"sort:{key}"
@@ -124,7 +181,7 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             "• Какие алгоритмы есть: "
             + ", ".join(SORT_KEY_MAP.keys())
             + ".\n"
-            "• Для массивов с отрицательными числами алгоритмы `counting` и `bucket` "
+            "• Для массивов с отрицательными числами алгоритмы `counting`, `bucket` и `radix` "
             "будут недоступны.\n"
             "• При ошибке ввода я попрошу прислать данные ещё раз.\n"
             "• После сортировки я предложу, что делать дальше: отсортировать этот же массив "
@@ -332,6 +389,23 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
         Например: /sort quick 5 3 1 4
         """
         parts = message.text.split()
+        # Если пользователь ввёл только "/sort" без параметров —
+        # ведём себя так же, как при нажатии кнопки
+        # "Написать массив самому".
+        if len(parts) == 1:
+            logs(
+                message.chat.id,
+                "start_manual",
+                message="user used /sort without arguments",
+            )
+            bot.reply_to(
+                message,
+                "Напишите массив целых чисел через пробел.\n"
+                "Пример: `5 3 1 4`",
+                parse_mode="Markdown",
+            )
+            return
+
         if len(parts) < 3:
             logs(
                 message.chat.id,
@@ -389,17 +463,17 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
 
         sort_alg = SORT_KEY_MAP[algo_key]
 
-        # Ограничение для counting и bucket при отрицательных числах
-        if min(arr) < 0 and sort_alg in (COUNTING, BUCKET):
+        # Ограничение для counting, bucket и radix при отрицательных числах
+        if min(arr) < 0 and sort_alg in (COUNTING, BUCKET, RADIX):
             logs(
                 message.chat.id,
                 "sort_error",
                 sort_name=algo_key,
-                message="negative numbers not allowed for counting/bucket",
+                message="negative numbers not allowed for counting/bucket/radix",
             )
             bot.reply_to(
                 message,
-                "Алгоритмы counting и bucket не работают с отрицательными числами.\n"
+                "Алгоритмы counting, bucket и radix не работают с отрицательными числами.\n"
                 "Выберите другой алгоритм или используйте массив только из неотрицательных чисел.",
             )
             return
@@ -443,17 +517,21 @@ def _register_text_handlers(bot: telebot.TeleBot) -> None:
             f"*Время встроенной сортировки*: `{d2} мс`\n"
             f"*Отсортированный массив*:\n`{formatted_arr}`"
         )
-        # Если массив усечён, добавляем кнопку "Показать весь массив"
+
+        # Кнопки: показать весь массив (если он длинный) и показать код алгоритма
+        kb = types.InlineKeyboardMarkup()
+        kb.row(
+            types.InlineKeyboardButton(
+                text="Показать код алгоритма", callback_data=f"code:{algo_key}"
+            )
+        )
         if len(res) > 50:
-            kb = types.InlineKeyboardMarkup()
             kb.row(
                 types.InlineKeyboardButton(
                     text="Показать весь массив", callback_data="show:full"
                 )
             )
-            bot.reply_to(message, reply_text, parse_mode="Markdown", reply_markup=kb)
-        else:
-            bot.reply_to(message, reply_text, parse_mode="Markdown")
+        bot.reply_to(message, reply_text, parse_mode="Markdown", reply_markup=kb)
 
 
 def _register_callback_handlers(bot: telebot.TeleBot) -> None:
@@ -529,17 +607,17 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
 
         sort_alg = SORT_KEY_MAP[algo_key]
 
-        # Ограничение для counting и bucket при отрицательных числах
-        if min(arr) < 0 and sort_alg in (COUNTING, BUCKET):
+        # Ограничение для counting, bucket и radix при отрицательных числах
+        if min(arr) < 0 and sort_alg in (COUNTING, BUCKET, RADIX):
             logs(
                 chat_id,
                 "sort_callback_error",
                 sort_name=algo_key,
-                message="negative numbers not allowed for counting/bucket",
+                message="negative numbers not allowed for counting/bucket/radix",
             )
             bot.answer_callback_query(
                 call.id,
-                "counting и bucket не работают с отрицательными числами.",
+                "counting, bucket и radix не работают с отрицательными числами.",
                 show_alert=True,
             )
             return
@@ -577,24 +655,40 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
 
         LAST_RESULT_BY_CHAT[chat_id] = res
         formatted_arr = _format_array(res)
+        # Оборачиваем сложности в обратные кавычки, чтобы символы `*` и `(` `)`
+        # не ломали Markdown‑разметку.
         reply_text = (
             f"*Алгоритм*: `{sort_alg.name}`\n"
-            f"*Time complexity*: {sort_alg.time_complexity}\n"
-            f"*Space complexity*: {sort_alg.space_complexity}\n"
+            f"*Time complexity*: `{sort_alg.time_complexity}`\n"
+            f"*Space complexity*: `{sort_alg.space_complexity}`\n"
             f"*Время алгоритма*: `{d1} мс`\n"
             f"*Время встроенной сортировки*: `{d2} мс`\n"
             f"*Отсортированный массив*:\n`{formatted_arr}`"
         )
+
+        # Кнопки управления результатом сортировки
+        kb = types.InlineKeyboardMarkup()
+        kb.row(
+            types.InlineKeyboardButton(
+                text="Показать код алгоритма", callback_data=f"code:{algo_key}"
+            )
+        )
         if len(res) > 50:
-            kb = types.InlineKeyboardMarkup()
             kb.row(
                 types.InlineKeyboardButton(
                     text="Показать весь массив", callback_data="show:full"
                 )
             )
+        try:
             bot.send_message(chat_id, reply_text, parse_mode="Markdown", reply_markup=kb)
-        else:
-            bot.send_message(chat_id, reply_text, parse_mode="Markdown")
+        except ApiTelegramException as e:
+            logs(
+                chat_id,
+                "telegram_send_error",
+                sort_name=algo_key,
+                message=str(e),
+            )
+            return
 
         # Кнопки "что делать дальше"
         next_kb = types.InlineKeyboardMarkup()
@@ -711,6 +805,71 @@ def _register_callback_handlers(bot: telebot.TeleBot) -> None:
         for i in range(0, len(text), chunk_size):
             bot.send_message(chat_id, text[i : i + chunk_size])
 
+        bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("code:"))
+    def handle_code_callback(call: telebot.types.CallbackQuery) -> None:
+        try:
+            _, algo_key = call.data.split(":", maxsplit=1)
+        except ValueError:
+            bot.answer_callback_query(call.id)
+            return
+
+        if algo_key not in SORT_KEY_MAP:
+            logs(
+                call.message.chat.id,
+                "code_callback_error",
+                message=f"unknown algorithm={algo_key}",
+            )
+            bot.answer_callback_query(call.id, "Неизвестный алгоритм.")
+            return
+
+        sort_alg = SORT_KEY_MAP[algo_key]
+
+        # Собираем код основной функции и, при необходимости, вспомогательных
+        sources: list[str] = []
+        try:
+            sources.append(inspect.getsource(sort_alg.sort_function))
+        except OSError:
+            bot.answer_callback_query(call.id, "Не удалось получить код алгоритма.")
+            return
+
+        # Для merge sort добавляем функцию merge, для heap sort — heapify.
+        if algo_key == "merge":
+            try:
+                sources.append(inspect.getsource(sort_func.merge))
+            except OSError:
+                pass
+        elif algo_key == "heap":
+            try:
+                sources.append(inspect.getsource(sort_func.heapify))
+            except OSError:
+                pass
+
+        full_source = "\n\n".join(sources)
+
+        # Текстовое описание алгоритма (если есть)
+        description = ALGO_DESCRIPTIONS.get(algo_key, "")
+
+        # Логируем просмотр кода и описания алгоритма
+        logs(
+            call.message.chat.id,
+            "code_view",
+            sort_name=algo_key,
+            message=description,
+        )
+        if description:
+            header = (
+                f"*Алгоритм* `{sort_alg.name}`\n"
+                f"{description}\n\n"
+                f"*Код алгоритма:*\n"
+            )
+        else:
+            header = f"*Код алгоритма* `{sort_alg.name}`:\n"
+
+        # Отправляем описание и код отдельным сообщением в формате Markdown
+        code_text = f"{header}```python\n{full_source}\n```"
+        bot.send_message(call.message.chat.id, code_text, parse_mode="Markdown")
         bot.answer_callback_query(call.id)
 
 
