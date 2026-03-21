@@ -108,10 +108,14 @@ class Menu:
 
         elif self.state == State.CHOOSE_NEXT:
             print("Что делать дальше?")
-            a = int(input(
-                    "0.Отсортировать этот же массив \n"
-                    "1.Ввести другой массив \n"
-                    "2.Выйти из программы \nВведите номер: "))
+            try:
+                a = int(input(
+                        "0.Отсортировать этот же массив \n"
+                        "1.Ввести другой массив \n"
+                        "2.Выйти из программы \nВведите номер: "))
+            except ValueError:
+                errormessage("введите 0, 1 или 2.")
+                return
             if a == 0:
                 self.state = State.PICK_SORT
             elif a == 1:

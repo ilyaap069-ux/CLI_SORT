@@ -13,12 +13,12 @@ def bubble_sort(arr: List[int]) -> List[int]:
     return arr
 
 
-def radix_sort_non_negative(arr: List[int]) -> List[int]:
+def radix_sort(arr: List[int]) -> List[int]:
     """Radix sort для неотрицательных целых чисел."""
     if not arr:
         return []
     if any(value < 0 for value in arr):
-        raise ValueError("radix_sort_non_negative поддерживает только неотрицательные числа")
+        raise ValueError("radix_sort поддерживает только неотрицательные числа")
 
     result = list(arr)
     max_value = max(result)
@@ -42,22 +42,22 @@ def radix_sort_non_negative(arr: List[int]) -> List[int]:
 
 
 def bucket_sort(arr: List[int]) -> List[int]:
-    """Bucket/bit‑set сортировка для неотрицательных целых чисел."""
+    """Bucket сортировка для неотрицательных целых чисел (с поддержкой дубликатов)."""
     if not arr:
         return []
     if any(value < 0 for value in arr):
         raise ValueError("bucket_sort поддерживает только неотрицательные числа")
 
     max_value = max(arr)
-    present = [False] * (max_value + 1)
+    counts = [0] * (max_value + 1)
 
     for value in arr:
-        present[value] = True
+        counts[value] += 1
 
     result: List[int] = []
-    for value, is_present in enumerate(present):
-        if is_present:
-            result.append(value)
+    for value, count in enumerate(counts):
+        if count:
+            result.extend([value] * count)
 
     return result
 
